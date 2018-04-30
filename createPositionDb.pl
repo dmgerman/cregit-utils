@@ -12,6 +12,7 @@ my $dbFile = shift @ARGV;
 my $tableName = shift @ARGV;
 my $toProcess = shift @ARGV;
 my $removePrefix = shift @ARGV;
+my $verbose = 0;
 
 my %memoFiles;
 my %memoCids;
@@ -78,7 +79,7 @@ sub Do_Directory {
     while (readdir $dh) {
         my $baseName = $_;
         my $fileName = $toProcess . '/' . $_;
-        print STDERR "doing $fileName ...\n";
+        print STDERR "doing $fileName ...\n" if $verbose;
         if (-f $fileName and $fileName =~ /\.blame$/) {
             Do_File($fileName, $removePrefix);
             $i++;

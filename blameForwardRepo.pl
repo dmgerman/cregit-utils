@@ -94,7 +94,7 @@ while (<FILES>) {
         next;
     }
     $count++;
-    print STDERR ("$count: $name\n");
+    print STDERR ("$count: $name\n") if $verbose;
 
 
     my $errorCode = execute_command($blameCommand, "--blameExtension=$blameExtension", $baseCid, $futureCid, $repoDir, $name, $outputDir);

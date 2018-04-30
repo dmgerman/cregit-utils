@@ -15,6 +15,7 @@ my $removePrefix = shift @ARGV;
 
 my %memoFiles;
 my %memoCids;
+my $verbose = 0;
 
 Usage("type must be 'old' or 'new'") unless $type eq "old" or $type eq "new";
 
@@ -70,7 +71,7 @@ sub Do_Directory {
     while (readdir $dh) {
         my $baseName = $_;
         my $fileName = $toProcess . '/' . $_;
-        print STDERR "doing $fileName ...\n";
+        print STDERR "doing $fileName ...\n" if $verbose;
         if (-f $fileName and $fileName =~ /\.token$/) {
             Do_File($fileName, $removePrefix);
             $i++;
@@ -107,7 +108,7 @@ sub Do_File{
 
     my ($done) = Simple_Query("select count(*) from ${type}tokentoline where ${type}filename = ?", $repoFileName);
     if ($done > 0) {
-        print STDERR "File [$repoFileName] ($file) has been already done \n";
+        print STDERR "File [$repoFileName] ($file) has been already done \n" if $verbose;
         return;
     }
 

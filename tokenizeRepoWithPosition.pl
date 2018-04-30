@@ -93,7 +93,7 @@ while (<FILES>) {
         next;
     }
     $count++;
-    print STDERR ("$count: $name\n");
+    print STDERR ("$count: $name\n") if $verbose;
 
     my ($fh, $temp) = mkstemp( "tmpfile-XXXXX" );
     close($fh);
@@ -122,7 +122,7 @@ sub move_file
     die "from file does not exist in copy_file [$from]" if not -f $from;
 
     if (not -d $toDir) {
-        printf("Creating directory [$toDir]\n");
+        printf("Creating directory [$toDir]\n") if $verbose;
 	make_path($toDir) or "die unable to create directory $to";
     } 
     move($from, $to) or
