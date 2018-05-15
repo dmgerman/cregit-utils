@@ -32,23 +32,24 @@ Create_Table_If_Needed("blamedecl", "create table blamedecl(
        filename     TEXT,
        cid          CHAR(40),
        line         int,
-       decl         TEXT,
-       value        TEXT
+       dtype         TEXT,
+       dvalue        TEXT
     );");
 
 Create_Table_If_Needed("blamemarker", "create table blamemarker(
        filename     TEXT,
        cid          CHAR(40),
        line         int,
+       mtype        TEXT,
        marker       TEXT,
-       value        TEXT
+       mvalue        TEXT
     );");
 
 
 
 my $ins = $dbh->prepare("insert into blametoken(filename, cid, line, ttype, ttoken) values (?, ?, ?, ?, ?);");
-my $insDecl = $dbh->prepare("insert into blamedecl(filename, cid, line, decl, value) values (?, ?, ?, ?, ?);");
-my $insMarker = $dbh->prepare("insert into blamemarker(filename, cid, line, marker) values (?, ?, ?, ?);");
+my $insDecl = $dbh->prepare("insert into blamedecl(filename, cid, line, dtype, dvalue) values (?, ?, ?, ?, ?);");
+my $insMarker = $dbh->prepare("insert into blamemarker(filename, cid, line, mtype, marker, mvalue) values (?,?, ?, ?, ?,?);");
 
 if (-f $filename) {
     # it is a file
@@ -90,6 +91,8 @@ sub Load_File {
 
     my $lineNo = 1;
     my $inserted = 0;
+    my $insertedDecl = 0;
+    my $insertedMarker = 0;
     while (<IN>) {
         chomp;
 
@@ -103,24 +106,40 @@ sub Load_File {
         my $line = substr($original, length($cid . $oldnames)+2);
         
         $line =~ s/^\s+//;
-        my $toSplit = index($line, '|');
-        if ($toSplit > 0) {
+        my $toSplit;
+
+        if ($line =~ /^(begin_|end_)([^\|]+)(.*)$/) {
+            #                print("Ignored [$_] [$type];[$rest]\n");
+            my $type = $1;
+            my $marker = $2;
+            my $value = $3;
+            $type =~ s/_$//;
+            $value =~ s/^\|//;
+            $insMarker->execute($name, $cid, $lineNo, $type, $marker, $value);
+            $insertedMarker++;
+        } elsif (($toSplit = index($line, '|')) > 0) {
             my $type = substr($line, 0, $toSplit);
             my $rest = substr($line, $toSplit+1);
-            if ($type eq "DECL" or $type =~ /^(begin_|end_)/) {
+            if ($type eq "DECL") {
 #                print("Ignored [$_] [$type];[$rest]\n");
+                my $splitAgain = index($rest, '|');
+                die "illegal record [$line]"unless ($splitAgain > 0);
+                my $dType = substr($rest, 0, $splitAgain);
+                my $value = substr($rest, $splitAgain+1);
+                $insDecl->execute($name, $cid, $lineNo, $dType, $value);
+                $insertedDecl++;
             } else {
                 $rest =~ s/;/<SEMICOLON>/g;
                 $ins->execute($name, $cid, $lineNo, $type, $rest);
                 $inserted++;
             }
         } else {
-            print("ignored [$_][$line]\n") if $line ne "" and $line !~ /^(begin_|end_)/;
+            print("ignored [$_][$line]\n") if $line ne "";
         }
         $lineNo++;
     }
     close(IN);
-    print("Filename: $filename;$lineNo;$inserted\n");
+    print("Filename: $filename;$lineNo;$inserted;$insertedDecl;$insertedMarker\n");
     $dbh->commit();
 }
 
