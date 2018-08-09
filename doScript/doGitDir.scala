@@ -7,15 +7,27 @@ import util.Try
 object  doGitDir {
 
 
+  def usage = {
+    println("no command specified")
+    println("Usage sourceDir outputDir outputExtension script " )
+    println("  script is expected to output to stdout (it is a command to be passed to the shell)")
+    System.exit(1)
+  }
+
+
   def main(args: Array[String]) {
+
+    if (args.length != 4) {
+      usage
+    }
 
     val inputDir = args(0)
     val outputDir = args(1)
     val suffix = args(2)
     val command = args(3)
 
-    if (command.length == 0) {
-      println("no command specified")
+    if (command.length == 4) {
+      usage
       System.exit(1)
     }
 
