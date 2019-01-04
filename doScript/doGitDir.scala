@@ -2,23 +2,22 @@ import sys.process._
 import scala.io.StdIn._
 import java.io.File
 import util.Try
-
+import scala.language.postfixOps
 
 object  doGitDir {
 
 
-  def usage = {
-    println("no command specified")
+  def usage(msg:String="") = {
+    println(msg)
     println("Usage sourceDir outputDir outputExtension script " )
     println("  script is expected to output to stdout (it is a command to be passed to the shell)")
     System.exit(1)
   }
 
-
   def main(args: Array[String]) {
 
     if (args.length != 4) {
-      usage
+      usage()
     }
 
     val inputDir = args(0)
@@ -27,8 +26,7 @@ object  doGitDir {
     val command = args(3)
 
     if (command.length == 4) {
-      usage
-      System.exit(1)
+      usage("no command specified")
     }
 
     def process_file(x:String) {
@@ -49,7 +47,7 @@ object  doGitDir {
       if (!outDir.exists()) {
         outDir.mkdirs()
       }
-      println(s"$outDir\n\n")
+      println(s"$outDir -> $outputFile\n\n")
 
       // run the script, returns error code
       val toRun = s"$command $inputFile"
@@ -62,10 +60,9 @@ object  doGitDir {
         System.exit(1)
       }
 
-      tempFile.renameTo(outputFile)
+      println (tempFile.renameTo(outputFile));
 
     }
-
 
     val files = (s"git -C $inputDir ls-files " !!)
 
@@ -73,8 +70,7 @@ object  doGitDir {
 
     val toProcess = files.split("\n").filter {s => regexp.findFirstIn(s).isDefined }.par
 
-    println("Number of threads")
-    println(toProcess.tasksupport.parallelismLevel)
+    println("Number of threads", toProcess.tasksupport.parallelismLevel)
 
     toProcess.map(x=> process_file(x))
 
