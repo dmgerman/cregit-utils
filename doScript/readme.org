@@ -1,0 +1,16 @@
+
+THis is how it works, so far.
+
+- filepath is hardcoded, it needs to be another parameter
+
+#+BEGIN_EXAMPLE
+scala doGitDir /home/linux/original.repo/linux-all-grafted /tmp/d .token 'srcml --language=C --position'
+#+END_EXAMPLE
+
+tokenizing a repo with line numbers
+
+#+BEGIN_EXAMPLE
+scala doGitDir /home/replay/git/original.repo/git /tmp/e .token '/home/dmg/git.dmg/cregit-scala/tokenize/tokenizeSrcMl.pl --language=C --position'
+#+END_EXAMPLE
+
+
