@@ -214,7 +214,8 @@ object Main extends App {
     val listBlame = (0 to size-1).map { i =>
       val commit = blameResult.getSourceCommit(i)
       val line = blameResult.getSourceLine(i)
-      (commit, line)
+      val path = blameResult.getSourcePath(i);
+      (commit, line, path)
     }
     listBlame
   }
@@ -293,30 +294,32 @@ object Main extends App {
   // blame ansFile at commitToBlame
 
   // combine the blames
-  originalBlame.zipWithIndex.foreach{case ((commit, lineOld),line)=>
+  originalBlame.zipWithIndex.foreach{case ((commit, lineOld, oldPath),line)=>
 
     // if the commit is the same as the ancestor then we must
     // replace the blame info
     if (commit.getName == ansCommit) {
 
-      val otherCommit = secondBlame(lineOld)._1
-
+      val (otherCommit, _, otherPath)  = secondBlame(lineOld)
 
       if (otherCommit.getName == commitToBlame.getName) {
         print(commit.getName)
         print(" (")
-        print ("--->done during copy<--")
+        print (s"--->done during copy<-- [$oldPath]")
         print(" " + commit.getAuthorIdent)
       } else {
         print(otherCommit.getName)
         print(" (")
-        print ("--->original file<--")
+        print (s"--->original file<-- [$otherPath]")
         //print(otherCommit.getName)
         print(" " + otherCommit.getAuthorIdent)
       }
     } else {
       print(commit.getName)
-      print(" (")
+      if (oldPath == file)
+        print(" (")
+      else
+        print(s" ([$file]")
       print(" " + commit.getAuthorIdent)
     }
     println(s") ${contents(line)}");
