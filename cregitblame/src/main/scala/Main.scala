@@ -91,6 +91,8 @@ class Blame_File(val latestCommit: ObjectId, val fileName: String,
   }
 
   def output = {
+    // make sure we have as many lines in the contents as in the blame
+    // otherwise something is terribly wrong
     assert(contents.length ==  blameData.length)
     blameData.zip(contents).foreach{ case (entry, line) =>
       println(s"${entry.commit.getName} ${entry.filename} (${entry.commit.getAuthorIdent}) ${line}")
@@ -99,39 +101,40 @@ class Blame_File(val latestCommit: ObjectId, val fileName: String,
 }
 
 
-object Main extends App {
+class My_Repo (val repoDir: String) {
 
-  // arguments:
-  //   repoDir
-//    val repoDir = "/home/linux/original.repo/linux-all-grafted/"
-//  val repoDir = "/home/dmg/git.w/git-stein"
-//  val repoDir = "/tmp/git"
-  val repoDir = "/tmp/linux"
-//  val repoDir = "/tmp/token"
 
-////////////////////////////////////////////////////////
-  val repoFile = new File(repoDir)
-// build the repo data structure
-  val builder = new FileRepositoryBuilder()
-  builder.findGitDir(repoFile)
-  val repo = builder.build()
+  val repo = open_repo
   val git = new Git(repo)
 
-  def traversable_commits (repo:Repository) = {
+  def open_repo  = {
+    val repoFile = new File(repoDir)
+    // build the repo data structure
+    val builder = new FileRepositoryBuilder()
+    builder.findGitDir(repoFile)
+    if (builder.getGitDir== null) {
+      System.err.println(s"[$repoDir] is not a git repository")
+      System.exit(1)
+    }
+    builder.build()
+  }
+
+  def traversable_commits () = {
 
     // get all commits reachable from any reference
     // in the repo
 
     val walk = new RevWalk(repo)
 
-    val startCommits : List[RevCommit] = repo.
-      getAllRefs.map(_._2).
-      map{ref =>
-        walk.parseAny(ref.getObjectId)
-      }.
-      collect { case c: RevCommit => c }.
-      toList.
-      distinct
+    val startCommits : List[RevCommit] =
+      repo.
+        getAllRefs.map(_._2).
+        map{ref =>
+          walk.parseAny(ref.getObjectId)
+        }.
+        collect { case c: RevCommit => c }.
+        toList.
+        distinct
 
     walk.sort(TOPO) // traverse from roots to heads
     walk.sort(REVERSE, true) // oldest first
@@ -139,11 +142,11 @@ object Main extends App {
     walk
   }
 
-//  val commits = traversable_commits(repo)
+  def resolve (id: String) = {
+    repo.resolve(id)
+  }
 
-//  println(treeWalk.getTree.getClass.getSimpleName)
-
-  def commit_contents(repo:Repository, c: RevCommit) = {
+  def commit_tree_contents(c: RevCommit) = {
     // returns an iterator of a pair of (path, objectId)
 
     val tree = c.getTree()
@@ -181,7 +184,7 @@ object Main extends App {
     treeWalk.setRecursive(true);
     treeWalk.setFilter(PathFilter.create(path));
     if (!treeWalk.next()) {
-      println(s"we did not find [$path] in " + commitid)
+      println(s"we did not find file [$path] in commit " + commitid.getName)
       System.exit(1)
       null
     } else {
@@ -190,9 +193,12 @@ object Main extends App {
   }
 
 
-  def create_commit(repo: Repository, file: File_Entry, parent: RevCommit) = {
+  def create_commit(file: File_Entry, parent: ObjectId) = {
 
-    def replace_file_in_tree(repo:Repository, tree: RevTree, file: File_Entry): ObjectId = {
+    // we create a commit that simply updates file in the commit parent
+    // which will become the parent of this new commit
+
+    def replace_file_in_tree(tree: RevTree, file: File_Entry): ObjectId = {
       // builds a tree from another, but replaces the given file with new contents
 
       val objectInserter = repo.newObjectInserter();
@@ -236,12 +242,16 @@ object Main extends App {
       id
     }
 
-    val treeId = replace_file_in_tree(repo, parent.getTree, file)
+    val revParent = get_rev_commit(parent)
+    assert(revParent != null)
+
+    val treeId = replace_file_in_tree(revParent.getTree, file)
 
     val commitBuilder = new CommitBuilder()
     commitBuilder.setTreeId( treeId )
     commitBuilder.setMessage( s"Dummy commit to enhance history.\nreplaces file ${file.path}")
-    commitBuilder.setParentId(parent)
+    commitBuilder.setParentId(revParent)
+
     val person = new PersonIdent( "me", "me@example.com" )
     commitBuilder.setAuthor( person )
     commitBuilder.setCommitter( person )
@@ -254,8 +264,7 @@ object Main extends App {
 
   }
 
-  def do_blame_file(latestCommit:ObjectId, path:String, contents: Array[String]) :Blame_File =
-  {
+  def do_blame_file(latestCommit:ObjectId, path:String, contents: Array[String]) :Blame_File = {
     val blame = git.blame()
     blame.setStartCommit(latestCommit)
     blame.setFilePath(path)
@@ -272,10 +281,11 @@ object Main extends App {
       val path = blameResult.getSourcePath(i);
       new Blame_Entry(commit, line, path)
     }
+
     new Blame_File(latestCommit, path, first_commit(path), listBlame.toList, contents)
   }
 
-//  def combine_blames()
+  //  def combine_blames()
 
   def first_commit(path:String) = {
     val log = git.log.addPath(path).call()
@@ -283,10 +293,23 @@ object Main extends App {
     logIt.last
   }
 
+  def contents_at_commit(cid: ObjectId, path: String) = {
+    val contentsBlobId = blob_at_commit(cid, path)
+    val loader = repo.open(contentsBlobId)
+    scala.io.Source.fromInputStream(loader.openStream).mkString
+  }
 
+}
 
-  // we will assume that the input to this command is the
-  // fileid, <commit> <fileid>, <commit> <fileid> etc
+object Main extends App {
+
+//  val repoDir = "/home/linux/original.repo/linux-all-grafted/"
+//  val repoDir = "/home/dmg/git.w/git-stein"
+//  val repoDir = "/tmp/git"
+//  val repoDir = "/tmp/token"
+
+////////////////////////////////////////////////////////
+
 
 /*  val commit = args(0)
   val file = args(1)
@@ -295,6 +318,7 @@ object Main extends App {
  */
 
 //in linux repo
+  val repoDir = "/tmp/linux"
   val commit = "8fe28cb58bcb235034b64cbbb7550a8a43fd88be"
   val file = "net/netfilter/nf_conntrack_h323_main.c"
   val ansCommit = "f587de0e2feb9eb9b94f98d0a7b7437e4d6617b4"
@@ -302,57 +326,62 @@ object Main extends App {
 
 /*
  //in token repo
+  val repoDir = "/tmp/token"
   val commit    = "b8bb0909d85d71da604c4cf901b88dcf383228c2"
   val file      = "net/netfilter/nf_conntrack_h323_main.c"
   val ansCommit = "e5481b2d9f514bae33f6e556652ead331e804763"
   val ansFile   = "net/ipv4/netfilter/ip_conntrack_helper_h323.c"
  */
+  val repo = new My_Repo(repoDir)
 
-  //println(file, ansCommit, ansFile)
-
-  //blame original file
   val commitId = repo.resolve(commit);
-  val ansCommitId = repo.resolve(ansCommit);
 
-  def contents_at_commit(cid: ObjectId, path: String) = {
-    val contentsBlobId = blob_at_commit(cid, path)
-    val loader = repo.open(contentsBlobId)
-    scala.io.Source.fromInputStream(loader.openStream).mkString
+  if (commitId == null) {
+    Usage(s"latest commit for file Commit [$commit] does not exist in repo");
   }
 
-  val contents = contents_at_commit(commitId, file).split("\n")
+  def Usage(st:String) {
+    System.err.println("Usage...")
+    System.err.println(st)
+    System.exit(1)
+  }
 
-//  println(contents)
 
-  val originalBlame = do_blame_file(commitId, file, contents)
+  val ansCommitId = repo.resolve(ansCommit);
+  if (ansCommitId == null) {
+    Usage(s"commit of version of ancestor of file [$ansCommit] does not exist in repo");
+  }
 
-//  val firstCommit = first_commit(file)// determine which is the very first commit of the file
+  val contents = repo.contents_at_commit(commitId, file).split("\n")
+  if (contents == null) {
+    Usage(s"File ${file} does not exist in commit [$commit] in repo");
+  }
 
-  val firstVersionBlob = blob_at_commit(originalBlame.firstCommit, file)
+  val originalBlame = repo.do_blame_file(commitId, file, contents)
+
+  val firstVersionBlob = repo.blob_at_commit(originalBlame.firstCommit, file)
   assert(firstVersionBlob != null)
 
-  val ansFileBlob = blob_at_commit(ansCommitId, ansFile)
+  val ansFileBlob = repo.blob_at_commit(ansCommitId, ansFile)
   assert(ansFileBlob != null)
 
   // if the blob of last version of file is different than the blob ansfile
   val commitToBlame =
     if (firstVersionBlob != ansFileBlob) {
-      // create dummy commit with ancestor commit
-      val revCommit = get_rev_commit(ansCommitId)
-      assert(revCommit != null)
+      // create dummy commit with ancestor commit as parent
+      // and the contents of the firstCommit of the file we are tracking
       val fileToReplace = new File_Entry(ansFile, FileMode.REGULAR_FILE, firstVersionBlob)
-      create_commit(repo, fileToReplace, revCommit)
+      repo.create_commit(fileToReplace, ansCommitId)
     } else {
+      // othewise we just blame from the ancestor latest commit
       ansCommitId
     }
 
   //println(s">>>>>> joining commit ${commitToBlame.getName}")
-  val secondBlame = do_blame_file(commitToBlame, ansFile, Array[String]())
+  val secondBlame = repo.do_blame_file(commitToBlame, ansFile, Array[String]())
 
   val newBlame = originalBlame.combine(secondBlame)
   newBlame.output
-
-  System.exit(0);
 
 
 }
