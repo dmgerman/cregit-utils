@@ -39,9 +39,65 @@ import org.eclipse.jgit.diff.RawTextComparator
 
 import java.io.File
 
-class File_Entry(var path: String, var fileMode: FileMode, var oid: ObjectId) {
+class File_Entry(val path: String, val fileMode: FileMode, val oid: ObjectId) {
 
 }
+
+class Blame_Entry(val commit: RevCommit, val line: Int, val filename: String) {
+
+}
+
+class Blame_File(val latestCommit: ObjectId, val fileName: String,
+                 val firstCommit : ObjectId, val blameData: List[Blame_Entry],
+                 val contents: Array[String])  {
+
+  def get_line(line: Int) = {
+    blameData(line)
+  }
+
+  def combine(other: Blame_File) : Blame_File = {
+    // isDummyCommit indicates if joiningCommit was created to join the histories
+
+    // make sure we have first commit
+    val joiningCommit = other.latestCommit
+    val isDummyCommit = joiningCommit.getName != firstCommit.getName
+
+    assert(firstCommit!=null)
+    assert(joiningCommit!= null)
+    // combine the blames
+    val newBlameData = blameData.map{blameEntry =>
+
+      // if the commit is the first commit of the file
+      // replace the blame info
+      if (blameEntry.commit.getName == firstCommit.getName) {
+        val otherCommit = other.get_line(blameEntry.line).commit
+        // did we have to create an artificial commit?
+        if (isDummyCommit && otherCommit.getName == joiningCommit.getName) {
+          // it is due to the modification during copy. keep the attribution
+          blameEntry
+        } else {
+          // attribute it to the other blame
+          other.get_line(blameEntry.line)
+        }
+      } else {
+        blameEntry
+      }
+    }
+    // return a new Blame with
+    // new blamedata, but same original info, except for a new
+    // firstCommit (we use the one of the other blame)
+    new Blame_File(latestCommit, fileName,
+      other.firstCommit, newBlameData, contents)
+  }
+
+  def output = {
+    assert(contents.length ==  blameData.length)
+    blameData.zip(contents).foreach{ case (entry, line) =>
+      println(s"${entry.commit.getName} ${entry.filename} (${entry.commit.getAuthorIdent}) ${line}")
+    }
+  }
+}
+
 
 object Main extends App {
 
@@ -87,7 +143,7 @@ object Main extends App {
 
 //  println(treeWalk.getTree.getClass.getSimpleName)
 
-  def commits_contents(repo:Repository, c: RevCommit) = {
+  def commit_contents(repo:Repository, c: RevCommit) = {
     // returns an iterator of a pair of (path, objectId)
 
     val tree = c.getTree()
@@ -198,10 +254,10 @@ object Main extends App {
 
   }
 
-  def Blame_File(commit:ObjectId, path:String) =
+  def do_blame_file(latestCommit:ObjectId, path:String, contents: Array[String]) :Blame_File =
   {
     val blame = git.blame()
-    blame.setStartCommit(commit)
+    blame.setStartCommit(latestCommit)
     blame.setFilePath(path)
     blame.setFollowFileRenames(true)
     blame.setTextComparator(RawTextComparator.WS_IGNORE_ALL)
@@ -210,22 +266,22 @@ object Main extends App {
 
     val size = blameText.size
 
-
     val listBlame = (0 to size-1).map { i =>
       val commit = blameResult.getSourceCommit(i)
       val line = blameResult.getSourceLine(i)
       val path = blameResult.getSourcePath(i);
-      (commit, line, path)
+      new Blame_Entry(commit, line, path)
     }
-    listBlame
+    new Blame_File(latestCommit, path, first_commit(path), listBlame.toList, contents)
   }
+
+//  def combine_blames()
 
   def first_commit(path:String) = {
     val log = git.log.addPath(path).call()
     val logIt = log.asScala.toIterator.toList
     logIt.last
   }
-
 
 
 
@@ -252,7 +308,7 @@ object Main extends App {
   val ansFile   = "net/ipv4/netfilter/ip_conntrack_helper_h323.c"
  */
 
-  println(file, ansCommit, ansFile)
+  //println(file, ansCommit, ansFile)
 
   //blame original file
   val commitId = repo.resolve(commit);
@@ -268,11 +324,11 @@ object Main extends App {
 
 //  println(contents)
 
-  val originalBlame = Blame_File(commitId, file)
+  val originalBlame = do_blame_file(commitId, file, contents)
 
-  val firstCommit = first_commit(file)// determine which is the very first commit of the file
+//  val firstCommit = first_commit(file)// determine which is the very first commit of the file
 
-  val firstVersionBlob = blob_at_commit(firstCommit, file)
+  val firstVersionBlob = blob_at_commit(originalBlame.firstCommit, file)
   assert(firstVersionBlob != null)
 
   val ansFileBlob = blob_at_commit(ansCommitId, ansFile)
@@ -289,174 +345,14 @@ object Main extends App {
     } else {
       ansCommitId
     }
-  val secondBlame =Blame_File(commitToBlame, ansFile)
 
-  // blame ansFile at commitToBlame
+  //println(s">>>>>> joining commit ${commitToBlame.getName}")
+  val secondBlame = do_blame_file(commitToBlame, ansFile, Array[String]())
 
-  // combine the blames
-  originalBlame.zipWithIndex.foreach{case ((commit, lineOld, oldPath),line)=>
-
-    // if the commit is the same as the ancestor then we must
-    // replace the blame info
-    if (commit.getName == ansCommit) {
-
-      val (otherCommit, _, otherPath)  = secondBlame(lineOld)
-
-      if (otherCommit.getName == commitToBlame.getName) {
-        print(commit.getName)
-        print(" (")
-        print (s"--->done during copy<-- [$oldPath]")
-        print(" " + commit.getAuthorIdent)
-      } else {
-        print(otherCommit.getName)
-        print(" (")
-        print (s"--->original file<-- [$otherPath]")
-        //print(otherCommit.getName)
-        print(" " + otherCommit.getAuthorIdent)
-      }
-    } else {
-      print(commit.getName)
-      if (oldPath == file)
-        print(" (")
-      else
-        print(s" ([$file]")
-      print(" " + commit.getAuthorIdent)
-    }
-    println(s") ${contents(line)}");
-  }
+  val newBlame = originalBlame.combine(secondBlame)
+  newBlame.output
 
   System.exit(0);
-
-/*
-  println("traversing rest...")
-
-  val head = commits.last
-  println(head)
-  commits_contents2(repo, head)
-
-  println("end...")
- */
-
-/*
-  commits.take(1).foreach { c =>
-    println("------------------")
-    commits_contents(repo, c).foreach(println(_))
-  }
- */
-  // insert the new blob
-  //val lastCommitId = new RevCommit(repo.resolve(Constants.HEAD));
-/*
-
-
-  val lastCommitId = commits.last
-
-  val objectInserter = repo.newObjectInserter();
-  val bytes = "Hello World! 232\n".getBytes( "utf-8" );
-  val blobId = objectInserter.insert( Constants.OBJ_BLOB, bytes );
-  objectInserter.flush();
-
-  println("Blobid inserted " + blobId)
-
-  val fileToReplace = new File_Entry( "xdiff/xdiff.h", FileMode.REGULAR_FILE, blobId )
-  create_commit(repo, fileToReplace, lastCommitId)
- */
-
-/*
-  //we need to convert this
-  println("contents of " + first)
-
-  var i = 0
-  while (treeWalk.next()) {
-
-    println("get tree count" + treeWalk.getTreeCount())
-
-    if (treeWalk.isSubtree()) {
-        println("dir: " + treeWalk.getPathString());
-        treeWalk.enterSubtree();
-    } else {
-        println("file: " + treeWalk.getPathString());
-    }
-    i = i + 1
-  }
-  println("size "+i)
- */
-
-/*
-
-  val git = Git.open(repoFile)
-
-  val log = git.log.addPath(path).call()
-
-  val logIt = log.asScala.toIterator.toList
-
-  val startCommit = logIt.head.getName()
-
-
-  def Blame_File(commit:String, path:String) =
-  {
-    val blame = git.blame()
-    val commitObj = git.getRepository().resolve(commit);
-    blame.setStartCommit(commitObj)
-    blame.setFilePath(path)
-    blame.setFollowFileRenames(true)
-
-    val blameResult = blame.call()
-    val blameText = blameResult.getResultContents()
-
-    val size = blameText.size
-
-
-    val listBlame = (0 to size-1).map { i =>
-      val commit = blameResult.getSourceCommit(i)
-      val line = blameResult.getSourceLine(i)
-      (commit, line)
-    }
-    listBlame
-  }
-
-
-  val originalBlame = Blame_File(firstCommit, path)
-  val secondBlame =Blame_File(dummyCommit, beforePath)
-
-
-  originalBlame.zipWithIndex.foreach{case ((commit, lineOld),line)=>
-    print(s"line [$line]")
-    print(commit.getName)
-
-    if (commit.getName == lastCommit) {
-      val otherCommit = secondBlame(lineOld)._1
-
-      if (otherCommit.getName == dummyCommit) {
-        print ("--->done during the copy<--")
-        print(" " + commit.getAuthorIdent)
-      } else {
-        print ("--->part of the original file<--")
-        print(otherCommit.getName)
-        print(" " + otherCommit.getAuthorIdent)
-      }
-    } else {
-      print(" " + commit.getAuthorIdent)
-    }
-
-    println("");
-
-  }
-
- */
-
-
-  println("Hello, World! 2 ")
-
-/*
-  val invertBlame = secondBlame.map{case (line, commit, lineOld)=>
-    (commit, lineOld)
-
-  }
- */
-  println("Hello, World! 3 ")
-
-
-
 
 
 }
