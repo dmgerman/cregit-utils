@@ -103,7 +103,6 @@ class Blame_File(val latestCommit: ObjectId, val fileName: String,
 
 class My_Repo (val repoDir: String) {
 
-
   val repo = open_repo
   val git = new Git(repo)
 
@@ -191,7 +190,6 @@ class My_Repo (val repoDir: String) {
       treeWalk.getObjectId(0);
     }
   }
-
 
   def create_commit(file: File_Entry, parent: ObjectId) = {
 
@@ -311,19 +309,32 @@ object Main extends App {
 ////////////////////////////////////////////////////////
 
 
-/*  val commit = args(0)
-  val file = args(1)
-  val anscommit = args(2)
-  val ansfile = args(3)
- */
+  def Usage(st:String) {
+    System.err.println("Usage <repoDir> <latestCommit> <filename> <ancestorLatestCommit> <filenameOfAncestor>\n")
+    System.err.println(st)
+    System.exit(1)
+  }
 
-//in linux repo
+  if (args.length != 5) {
+    Usage(s"Illegal number of parameters");
+  }
+
+  val repoDir = args(0)
+  val commit = args(1)
+  val file = args(2)
+  val ansCommit = args(3)
+  val ansFile = args(4)
+
+  // sbt run /tmp/linux "8fe28cb58bcb235034b64cbbb7550a8a43fd88be" "net/netfilter/nf_conntrack_h323_main.c" "f587de0e2feb9eb9b94f98d0a7b7437e4d6617b4" "net/ipv4/netfilter/ip_conntrack_helper_h323.c"
+
+  //in linux repo
+  /*
   val repoDir = "/tmp/linux"
   val commit = "8fe28cb58bcb235034b64cbbb7550a8a43fd88be"
   val file = "net/netfilter/nf_conntrack_h323_main.c"
   val ansCommit = "f587de0e2feb9eb9b94f98d0a7b7437e4d6617b4"
   val ansFile = "net/ipv4/netfilter/ip_conntrack_helper_h323.c"
-
+   */
 /*
  //in token repo
   val repoDir = "/tmp/token"
@@ -338,12 +349,6 @@ object Main extends App {
 
   if (commitId == null) {
     Usage(s"latest commit for file Commit [$commit] does not exist in repo");
-  }
-
-  def Usage(st:String) {
-    System.err.println("Usage...")
-    System.err.println(st)
-    System.exit(1)
   }
 
 
@@ -382,6 +387,5 @@ object Main extends App {
 
   val newBlame = originalBlame.combine(secondBlame)
   newBlame.output
-
 
 }
