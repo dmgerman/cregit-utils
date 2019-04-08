@@ -125,7 +125,7 @@ object Main extends App {
     val result = Blame(logRecords, originalBlame)
     result.output
   } else {
-    System.err.println("This file [$fileName] has not being copied. Use git-blame instead")
+    System.err.println(s"This file [$fileName] has not being copied. Use git-blame instead")
   }
 
 }
