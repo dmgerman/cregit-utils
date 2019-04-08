@@ -58,12 +58,15 @@ class Blame_File(val latestCommit: ObjectId, val fileName: String,
   def combine(other: Blame_File) : Blame_File = {
     // isDummyCommit indicates if joiningCommit was created to join the histories
 
+    assert(firstCommit!=null)
+
     // make sure we have first commit
     val joiningCommit = other.latestCommit
+
+    assert(joiningCommit!= null)
+
     val isDummyCommit = joiningCommit.getName != firstCommit.getName
 
-    assert(firstCommit!=null)
-    assert(joiningCommit!= null)
     // combine the blames
     val newBlameData = blameData.map{blameEntry =>
 
@@ -262,12 +265,14 @@ class My_Repo (val repoDir: String) {
 
   }
 
-  def do_blame_file(latestCommit:ObjectId, path:String, contents: Array[String]) :Blame_File = {
+  def do_blame_file(latestCommit:ObjectId, path:String, contents: Array[String]): Blame_File = {
     val blame = git.blame()
+
     blame.setStartCommit(latestCommit)
-    blame.setFilePath(path)
-    blame.setFollowFileRenames(true)
-    blame.setTextComparator(RawTextComparator.WS_IGNORE_ALL)
+      .setFilePath(path)
+      .setFollowFileRenames(true)
+      .setTextComparator(RawTextComparator.WS_IGNORE_ALL)
+
     val blameResult = blame.call()
     val blameText = blameResult.getResultContents()
 
@@ -362,7 +367,14 @@ object Main extends App {
     Usage(s"File ${file} does not exist in commit [$commit] in repo");
   }
 
+
+
   val originalBlame = repo.do_blame_file(commitId, file, contents)
+
+  // assert that the first commit of the file is the same as the anscestor commit.
+  // this will change with files that are copied from other repos
+  // but this will make sure that we implement properly git log --follow
+  assert(originalBlame.firstCommit.getName == ansCommitId.getName, "there appears to be a rename in the log... check the implementation of jgit log to make sure it follows")
 
   val firstVersionBlob = repo.blob_at_commit(originalBlame.firstCommit, file)
   assert(firstVersionBlob != null)
