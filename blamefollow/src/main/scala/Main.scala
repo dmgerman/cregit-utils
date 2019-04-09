@@ -39,42 +39,6 @@ import org.eclipse.jgit.lib.FileMode
 
 object Main extends App {
 
-  def Blame(records: List[LogFollowRecord], originalBlame: Blame_File):Blame_File = {
-
-    if (records.size == 0) {
-      originalBlame
-    } else {
-      val record = records.head
-      //println(s"-------------------------------------------------------from[${record.prevFileName}] to[${record.nextFileName}] cid[${record.cid}]\n")
-      //println(record.mkString)
-
-      val ansCommitId = repo.resolve(record.cid);
-      val firstVersionBlob = repo.blob_at_commit(ansCommitId, record.nextFileName)
-      val ansFileBlob = repo.blob_at_commit(ansCommitId, record.prevFileName)
-
-      //println("++++++++++++++++")
-
-      assert(ansFileBlob != null)
-
-      val commitToBlame =
-        if (firstVersionBlob != ansFileBlob) {
-          // create dummy commit with ancestor commit as parent
-          // and the contents of the firstCommit of the file we are tracking
-          val fileToReplace = new File_Entry(record.prevFileName, FileMode.REGULAR_FILE, firstVersionBlob)
-          repo.create_commit(fileToReplace, ansCommitId)
-        } else {
-          // othewise we just blame from the ancestor latest commit
-          ansCommitId
-        }
-
-      val secondBlame = repo.do_blame_file(commitToBlame, ansCommitId, record.prevFileName, Array[String]())
-
-      val newBlame = originalBlame.combine(secondBlame)
-
-      Blame(records.tail, newBlame)
-    }
-  }
-
 
   def Usage(st:String) {
     System.err.println("Usage <repoDir> <filename\n")
@@ -82,7 +46,7 @@ object Main extends App {
     System.exit(1)
   }
 
-  if (args.size != 2) {
+  if (args.size < 2 || args.size > 4) {
     Usage("")
   }
 
@@ -96,36 +60,114 @@ object Main extends App {
   //val fileName = "tools/testing/selftests/timers/nsleep-lat.c"
   //val fileName = "arch/alpha/kernel/core_marvel.c"
   val fileName = args(1)
+  val fromCid = if (args.size ==3) args(2) else "HEAD"
 
   val logger = new My_Logger(repoDir)
 
-  val logRecords = logger.logFollow(fileName).filter(rec => rec.operation == "copy")
-
-  logRecords.foreach(r=>println(r.mkString))
 
   val repo = new My_Repo(repoDir)
 
 
-  val headId = repo.resolve("HEAD");
+  def Blame(records: List[LogFollowRecord]):Blame_File = {
 
-  if (headId == null) {
-    Usage(s"HEAD did not exit in repo");
+    def Blame_With_Dummy_Commit(record:LogFollowRecord, ansCommitId: ObjectId, firstId: ObjectId, contents: Array[String]) = {
+
+
+        //println(s"-------------------------------------------------------from[${record.prevFileName}] to[${record.nextFileName}] cid[${record.cid}]\n")
+        //println(record.mkString)
+      val firstVersionBlob = repo.blob_at_commit(ansCommitId, record.nextFileName)
+      val ansFileBlob = repo.blob_at_commit(ansCommitId, record.prevFileName)
+
+      assert(firstVersionBlob != null, s"first blob for file does not exist at commit [$ansCommitId] blob [$firstVersionBlob]")
+
+      assert(ansFileBlob != null, s"ancestor blob for file does not exist at commit [$ansCommitId] blob [$ansFileBlob]")
+
+      val commitToBlame =
+        if (firstVersionBlob != ansFileBlob) {
+          // create dummy commit with ancestor commit as parent
+          // and the contents of the firstCommit of the file we are tracking
+          val fileToReplace = new File_Entry(record.prevFileName, FileMode.REGULAR_FILE, firstVersionBlob)
+          repo.create_commit(fileToReplace, ansCommitId)
+        } else {
+          // othewise we just blame from the ancestor latest commit
+          ansCommitId
+        }
+
+      val newBlame = repo.do_blame_file(commitToBlame, firstId, record.prevFileName, contents)
+      System.err.println(s"____________________________ $commitToBlame")
+
+      newBlame
+    }
+
+
+    // we need to fold to keep track of the previous firstCommit.
+    // we invert to start backwards. HEAD is just a placeholder to avoid errors, it is not used
+    // as the last element does not have an ancestor
+
+    val blamesFolding = records.
+      reverse.
+      foldLeft((List[Blame_File](), repo.resolve("HEAD"))){ case ((acc, firstId), record) =>
+
+
+        val ansCommitId = repo.resolve(record.cid);
+
+        val newBlame =
+          if (record.operation == "copy") {
+            val contents = repo.contents_at_commit(ansCommitId, record.nextFileName)
+
+            System.err.println(s"blaming copy")
+            Blame_With_Dummy_Commit(record, ansCommitId, firstId, contents)
+          } else {
+            val contents = repo.contents_at_commit(ansCommitId, record.fileName)
+
+            System.err.println(s"blaming original [$ansCommitId]")
+            repo.do_blame_file(ansCommitId, firstId, record.fileName, contents)
+          }
+
+        (newBlame::acc, ansCommitId)
+      }
+
+    // we don't need the firstCommit of the last one, so we throw it away
+    val blames = blamesFolding._1.reverse
+
+    val firstBlame = blames.head
+    val tailBlame = blames.tail
+
+    tailBlame.foldLeft(firstBlame:Blame_File){ (acc, blame) =>
+
+/*
+      System.err.println(s"->combining...")
+      System.err.println(s"  this blame ${blame.fileName} latest ${blame.latestCommit} first ${blame.firstCommit}")
+//      blame.output_n(5)
+      System.err.println(s"  acc ${acc.fileName} latest ${acc.latestCommit} first ${acc.firstCommit}")
+      //acc.output_n(5)
+      System.err.println("____________________________")
+ */
+
+      blame.combine(acc)
+    }
+
   }
 
-  val contents = repo.contents_at_commit(headId, fileName)
-  if (contents == null) {
-    Usage(s"File ${fileName} does not exist in commit [$headId] in repo");
-  }
-  //println(contents(0))
 
-  if (logRecords.length > 0) {
 
-    val firstCid = repo.resolve(logRecords.head.cid)
-    val originalBlame = repo.do_blame_file(headId, headId, fileName, contents)
-    val result = Blame(logRecords, originalBlame)
-    result.output
-  } else {
-    System.err.println(s"This file [$fileName] has not being copied. Use git-blame instead")
+
+  val startCid = repo.resolve(fromCid);
+
+  System.err.println(s"Logging from $fromCid")
+
+  if (startCid == null) {
+    Usage(s"$startCid does not exit in repo [$repoDir]");
   }
+
+  val logRecords = logger.logFollow(fileName, fromCid).
+    filter(rec => rec.operation == "copy" || rec.operation == "original")
+
+  logRecords.foreach(r=>System.err.println(r.mkString))
+
+    //println(contents(0))
+
+  val result = Blame(logRecords)
+  result.output
 
 }

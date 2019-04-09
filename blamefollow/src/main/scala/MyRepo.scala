@@ -248,7 +248,8 @@ class My_Repo (val repoDir: String) {
 
     //println(s"cid [${latestCommit}]size to process ${recordsBlame.size} -> {$path}")
 
-    val blameLines = recordsBlame.map { lines =>
+    val blameLines = recordsBlame.map { lines0 =>
+      val lines = lines0.filter(_ != "boundary")
       val commitLine = lines(0)
 
       val prevFileNameLine = if (lines(10).startsWith("previous")) lines(11) else lines(10)
@@ -256,8 +257,8 @@ class My_Repo (val repoDir: String) {
       val commitPattern = "^([0-9a-f]{40}) ([0-9]+) .+$".r
 //      println(commitLine)
       val commitPattern(cid, prevLineNumber) = commitLine
-//      println("after")
-
+      //      println("after")
+//      println(s"--->[$prevFileNameLine]")
       val prevFilePattern = "^filename (.+)$".r
       val prevFilePattern(prevFileName) = prevFileNameLine
 

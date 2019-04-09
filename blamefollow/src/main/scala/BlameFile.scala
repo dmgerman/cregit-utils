@@ -33,6 +33,9 @@ class Blame_File(val latestCommit: ObjectId, val fileName: String,
 
     assert(joiningCommit!= null)
 
+    System.err.println(s"joining this first commit [$firstCommit] with other latest commit [$joiningCommit]\n")
+
+
     val isDummyCommit = joiningCommit.getName != firstCommit.getName
 
     // combine the blames
@@ -70,7 +73,24 @@ class Blame_File(val latestCommit: ObjectId, val fileName: String,
       zip(
         contents.zipWithIndex).
       foreach{ case (entry, (line, i)) =>
-        println(s"${i+1} ${entry.commit.getName} ${entry.filename} (${entry.commit.getAuthorIdent}) ${line}")
+  //      println(s"${i+1} ${entry.commit.getName} ${entry.filename} (${entry.commit.getAuthorIdent}) ${line}")
+       println(entry.commit.getName + ";;\t" + line)
     }
   }
+
+  def output_n(n:Int) = {
+    // make sure we have as many lines in the contents as in the blame
+    // otherwise something is terribly wrong
+    assert(contents.length ==  blameData.length, s"Length of contents [${contents.length}] is different than blame data [${blameData.length}]")
+    blameData.
+      take(n).
+      zip(
+        contents.zipWithIndex).
+      foreach{ case (entry, (line, i)) =>
+        println(s"${i+1} ${entry.commit.getName} ${entry.filename} (${entry.commit.getAuthorIdent}) ${line}")
+        //println(entry.commit.getName + ";;\t" + line)
+      }
+  }
+
+
 }

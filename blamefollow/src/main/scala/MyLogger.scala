@@ -106,13 +106,14 @@ class My_Logger(dir: String) {
 
   }
 
-  def logFollow (fileName:String):List[LogFollowRecord] = {
+  def logFollow (fileName:String, cid: String):List[LogFollowRecord] = {
     val quote = "'"
-    val logCommand = s"git -C $dir log -p -w --follow --ignore-all-space --numstat --pretty=format:>>;$fileName;%H $fileName"
+    val logCommand = s"git -C $dir log -p -w --follow --ignore-all-space --numstat --pretty=format:>>;$fileName;%H $cid -- $fileName"
     System.err.println("running " + logCommand)
     val log = logCommand !!
     val revRecords = split_records(log, ">>;")
+    val headRecord = new LogFollowRecord(fileName, cid, "original", "", "", "", "", "")
     val result = revRecords.map( r => parse_record(r))
-    result
+    headRecord :: result
   }
 }
