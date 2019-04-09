@@ -14,7 +14,7 @@ class Blame_Entry(val commit: RevCommit, val line: Int, val filename: String) {
 
 
 class Blame_File(val latestCommit: ObjectId, val fileName: String,
-                 val firstCommit : ObjectId, val blameData: List[Blame_Entry],
+                 val firstCommit : ObjectId, val blameData: Array[Blame_Entry],
                  val contents: Array[String])  {
 
   def get_line(line: Int) = {

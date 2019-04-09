@@ -222,7 +222,7 @@ class My_Repo (val repoDir: String) {
       new Blame_Entry(commit, line, path)
     }
 
-    new Blame_File(latestCommit, path, firstCommit, listBlame.toList, contents)
+    new Blame_File(latestCommit, path, firstCommit, listBlame.toArray, contents)
   }
 
   def do_blame_file_git(latestCommit:ObjectId, firstCommit: ObjectId, path:String, contents: Array[String]): Blame_File = {
@@ -269,7 +269,7 @@ class My_Repo (val repoDir: String) {
       new Blame_Entry(rvCommit, prevLineNumber.toInt-1, prevFileName)
     }
 
-    new Blame_File(latestCommit, path, firstCommit, blameLines, contents)
+    new Blame_File(latestCommit, path, firstCommit, blameLines.toArray, contents)
 
   }
 
